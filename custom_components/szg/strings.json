@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sub-Zero Group Account",
+        "description": "Log in with your Sub-Zero Owner's App account. A browser window will open for authentication.",
+        "data": {}
+      },
+      "auth_callback": {
+        "title": "Complete Authentication",
+        "description": "After logging in, your browser will redirect to a URL starting with `msauth.com.subzero.group.owners.app://auth?code=...`. Copy the full URL and paste it below.",
+        "data": {
+          "redirect_url": "Redirect URL"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Account already configured",
+      "auth_failed": "Authentication failed"
+    },
+    "error": {
+      "invalid_url": "Invalid redirect URL — must contain an authorization code",
+      "auth_failed": "Authentication failed — please try again"
+    }
+  },
+  "options": {
+    "step": {
+      "device_pin": {
+        "title": "Enter Appliance PIN",
+        "description": "Enter the 6-digit PIN shown on the appliance display. Open a door on the appliance and press the 'Show PIN' button first.",
+        "data": {
+          "pin": "PIN"
+        }
+      }
+    },
+    "error": {
+      "invalid_pin": "Invalid PIN — must be 6 digits",
+      "pin_rejected": "PIN rejected by appliance"
+    }
+  }
+}
