@@ -35,13 +35,19 @@ async def async_setup_entry(
             entities.append(SZGBinarySensor(coordinator, conn, "cav_unit_on", "Upper Cavity Active"))
             entities.append(SZGBinarySensor(coordinator, conn, "cav2_unit_on", "Lower Cavity Active"))
             entities.append(SZGBinarySensor(coordinator, conn, "cav_probe_on", "Upper Probe In Use"))
+            entities.append(SZGBinarySensor(coordinator, conn, "cav2_probe_on", "Lower Probe In Use"))
             entities.append(SZGBinarySensor(coordinator, conn, "cav_remote_ready", "Upper Remote Ready"))
             entities.append(SZGBinarySensor(coordinator, conn, "cav2_remote_ready", "Lower Remote Ready"))
+            # Timers
+            entities.append(SZGBinarySensor(coordinator, conn, "cav_cook_timer_active", "Upper Cook Timer Active"))
+            entities.append(SZGBinarySensor(coordinator, conn, "cav2_cook_timer_active", "Lower Cook Timer Active"))
+            entities.append(SZGBinarySensor(coordinator, conn, "kitchen_timer_active", "Kitchen Timer 1 Active"))
+            entities.append(SZGBinarySensor(coordinator, conn, "kitchen_timer2_active", "Kitchen Timer 2 Active"))
 
         elif atype == ApplianceType.REFRIGERATOR:
             entities.append(SZGDoorSensor(coordinator, conn, "ref_door_ajar", "Fridge Door"))
             entities.append(SZGDoorSensor(coordinator, conn, "frz_door_ajar", "Freezer Door"))
-            entities.append(SZGBinarySensor(coordinator, conn, "service_required", "Service Required", BinarySensorDeviceClass.PROBLEM))
+            entities.append(SZGBinarySensor(coordinator, conn, "service_required", "Service Required", BinarySensorDeviceClass.PROBLEM, diagnostic=True))
 
         elif atype == ApplianceType.DISHWASHER:
             entities.append(SZGDoorSensor(coordinator, conn, "door_ajar", "Door"))
@@ -56,12 +62,15 @@ async def async_setup_entry(
 class SZGBinarySensor(SZGEntity, BinarySensorEntity):
     """Generic binary sensor for a Sub-Zero Group appliance."""
 
-    def __init__(self, coordinator, connection, prop_key, name, device_class=None):
+    def __init__(self, coordinator, connection, prop_key, name, device_class=None, diagnostic=False):
         super().__init__(coordinator, connection, prop_key)
         self._prop_key = prop_key
         self._attr_name = name
         if device_class:
             self._attr_device_class = device_class
+        if diagnostic:
+            from homeassistant.helpers.entity import EntityCategory
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
     def is_on(self) -> bool | None:

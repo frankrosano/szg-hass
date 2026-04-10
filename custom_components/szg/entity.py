@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from pyszg import Appliance, ApplianceType, ModuleGeneration
+from pyszg import Appliance
 
 from .const import DOMAIN, MANUFACTURER
 from .coordinator import SZGCoordinator, SZGDeviceConnection
@@ -31,7 +31,7 @@ class SZGEntity(CoordinatorEntity[SZGCoordinator]):
         """Return device info for this entity."""
         conn = self._connection
         appliance = conn.appliance
-        return DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, conn.device_id)},
             name=conn.name,
             manufacturer=MANUFACTURER,
@@ -39,6 +39,7 @@ class SZGEntity(CoordinatorEntity[SZGCoordinator]):
             serial_number=appliance.serial or None,
             sw_version=appliance.fw_version or None,
         )
+        return info
 
     @property
     def appliance(self) -> Appliance:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -43,6 +43,7 @@ class SZGDeviceConnection:
         self.local_client: SZGClient | None = None
         self.appliance = Appliance()
         self.pin: str | None = None
+        self._local_push_task: asyncio.Task | None = None
 
         # Parse type info from the device list
         type_str = device_info.get("applianceId", "")
@@ -69,7 +70,55 @@ class SZGDeviceConnection:
         """Set up local IP connection for a CAT device."""
         self.pin = pin
         self.local_client = SZGClient(ip, pin=pin)
+        self._local_push_task: asyncio.Task | None = None
         _LOGGER.info("Local connection configured for %s at %s", self.name, ip)
+
+    def start_local_push(
+        self, hass: HomeAssistant, on_update: Callable
+    ) -> None:
+        """Start local push listener in the background."""
+        if not self.has_local or self._local_push_task is not None:
+            return
+
+        async def _run_local_push() -> None:
+            while True:
+                try:
+                    # Connect push (blocking) in executor
+                    await hass.async_add_executor_job(
+                        self.local_client.connect_push
+                    )
+                    _LOGGER.info("Local push connected for %s", self.name)
+
+                    # Read updates in a loop (blocking reads in executor)
+                    while True:
+                        update = await hass.async_add_executor_job(
+                            self.local_client.read_update, 60.0
+                        )
+                        if update and "props" in update:
+                            self.appliance.update_from_response(update["props"])
+                            on_update()
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "Local push lost for %s: %s. Reconnecting in 5s...",
+                        self.name, exc,
+                    )
+                    try:
+                        self.local_client.disconnect_push()
+                    except Exception:
+                        pass
+                    await asyncio.sleep(5)
+
+        self._local_push_task = hass.async_create_background_task(
+            _run_local_push(), f"szg_local_push_{self.device_id[:8]}"
+        )
+
+    def stop_local_push(self) -> None:
+        """Stop local push listener."""
+        if self._local_push_task:
+            self._local_push_task.cancel()
+            self._local_push_task = None
+        if self.local_client:
+            self.local_client.disconnect_push()
 
     async def async_refresh(self, hass: HomeAssistant) -> Appliance:
         """Refresh appliance state using the best available method."""
@@ -148,11 +197,21 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
 
     async def async_setup(self) -> None:
         """Initialize cloud auth and discover devices."""
+        from pyszg.exceptions import AuthenticationError as PySZGAuthError
+
         token_data = self.entry.data.get(CONF_TOKENS, {})
         self._tokens = TokenSet.from_dict(token_data)
-        self._tokens = await self.hass.async_add_executor_job(
-            self._auth.ensure_valid, self._tokens
-        )
+
+        try:
+            self._tokens = await self.hass.async_add_executor_job(
+                self._auth.ensure_valid, self._tokens
+            )
+        except PySZGAuthError as err:
+            from homeassistant.exceptions import ConfigEntryAuthFailed
+            raise ConfigEntryAuthFailed("Token refresh failed") from err
+        except Exception as err:
+            from homeassistant.exceptions import ConfigEntryNotReady
+            raise ConfigEntryNotReady(f"Cannot connect to Sub-Zero cloud: {err}") from err
 
         # Save refreshed tokens
         new_data = dict(self.entry.data)
@@ -162,9 +221,13 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         self._cloud_client = SZGCloudClient(self._tokens, self._auth)
 
         # Discover devices
-        device_list = await self.hass.async_add_executor_job(
-            self._cloud_client.get_devices
-        )
+        try:
+            device_list = await self.hass.async_add_executor_job(
+                self._cloud_client.get_devices
+            )
+        except Exception as err:
+            from homeassistant.exceptions import ConfigEntryNotReady
+            raise ConfigEntryNotReady(f"Cannot fetch devices: {err}") from err
 
         pins = self.entry.data.get(CONF_DEVICE_PINS, {})
 
@@ -175,53 +238,100 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
 
             # Set up local connection if we have a PIN and the device supports it
             if conn.supports_local and device_id in pins:
-                # Get IP from a cloud state fetch
-                try:
-                    appliance = await self.hass.async_add_executor_job(
-                        self._cloud_client.get_appliance_state, device_id
+                # Get IP from the device info if available, defer cloud fetch
+                conn.pin = pins[device_id]
+
+        # (SignalR started separately after setup to avoid blocking bootstrap)
+
+    async def async_apply_pin_updates(self) -> None:
+        """Apply PIN changes from the options flow without restart.
+
+        Checks for new PINs in the config entry data and sets up
+        local connections for devices that now have PINs.
+        """
+        pins = self.entry.data.get(CONF_DEVICE_PINS, {})
+
+        for device_id, conn in self.devices.items():
+            if conn.supports_local and device_id in pins and not conn.has_local:
+                pin = pins[device_id]
+                conn.pin = pin
+
+                # Get IP from the current appliance state or fetch it
+                ip = conn.appliance.ip_address
+                if not ip:
+                    try:
+                        appliance = await self.hass.async_add_executor_job(
+                            self._cloud_client.get_appliance_state, device_id
+                        )
+                        ip = appliance.ip_address
+                    except Exception as exc:
+                        _LOGGER.warning("Failed to get IP for %s: %s", device_id, exc)
+
+                if ip:
+                    conn.setup_local(ip, pin)
+                    _LOGGER.info(
+                        "Local control enabled for %s at %s", conn.name, ip
                     )
-                    ip = appliance.ip_address
-                    if ip:
-                        conn.setup_local(ip, pins[device_id])
-                except Exception as exc:
-                    _LOGGER.warning("Failed to get IP for %s: %s", device_id, exc)
+                    # Start local push for this device
+                    conn.start_local_push(self.hass, self._trigger_update)
 
-        # Start SignalR for real-time updates
-        await self._start_signalr()
-
-    async def _start_signalr(self) -> None:
-        """Start SignalR connection for real-time push updates."""
+    def start_signalr_background(self) -> None:
+        """Start SignalR in the background. Call after HA is fully started."""
         if SZGCloudSignalR is None:
             _LOGGER.info("websockets not installed, using polling only")
             return
 
+        if self._signalr_task is not None:
+            return  # Already running
+
         self._signalr = SZGCloudSignalR(self._tokens, self._auth)
 
-        async def on_signalr_update(device_id: str, msg_type: int, data: dict) -> None:
-            """Handle a SignalR push update."""
-            if device_id in self.devices:
-                conn = self.devices[device_id]
-                if msg_type == 1:
-                    conn.appliance.update_from_response(data)
-                elif msg_type == 2:
-                    props = data.get("props", data)
-                    conn.appliance.update_from_response(props)
-                self.async_set_updated_data(
-                    {did: c.appliance for did, c in self.devices.items()}
-                )
-
         device_ids = list(self.devices.keys())
-        self._signalr_task = self.hass.async_create_task(
-            self._signalr.connect(
+
+        async def _run_signalr() -> None:
+            async def on_signalr_update(device_id: str, msg_type: int, data: dict) -> None:
+                if device_id in self.devices:
+                    conn = self.devices[device_id]
+                    # Skip SignalR updates for devices with active local push
+                    if conn.has_local and conn._local_push_task and not conn._local_push_task.done():
+                        return
+                    if msg_type == 1:
+                        conn.appliance.update_from_response(data)
+                    elif msg_type == 2:
+                        props = data.get("props", data)
+                        conn.appliance.update_from_response(props)
+                    self.async_set_updated_data(
+                        {did: c.appliance for did, c in self.devices.items()}
+                    )
+
+            await self._signalr.connect(
                 device_ids=device_ids,
                 callback=on_signalr_update,
             )
+
+        self._signalr_task = self.hass.async_create_background_task(
+            _run_signalr(), "szg_signalr"
+        )
+
+    def _trigger_update(self) -> None:
+        """Trigger a coordinator data update from a local push callback."""
+        self.async_set_updated_data(
+            {did: c.appliance for did, c in self.devices.items()}
         )
 
     async def _async_update_data(self) -> dict[str, Appliance]:
         """Poll all devices for current state (fallback when SignalR misses)."""
         for conn in self.devices.values():
             await conn.async_refresh(self.hass)
+
+            # Lazy local connection setup: if we have a PIN but no local client yet,
+            # check if the cloud response gave us an IP address
+            if conn.pin and not conn.has_local and conn.supports_local:
+                ip = conn.appliance.ip_address
+                if ip:
+                    conn.setup_local(ip, conn.pin)
+                    conn.start_local_push(self.hass, self._trigger_update)
+
         return {did: conn.appliance for did, conn in self.devices.items()}
 
     async def async_shutdown(self) -> None:
@@ -231,5 +341,6 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         if self._signalr_task:
             self._signalr_task.cancel()
         for conn in self.devices.values():
+            conn.stop_local_push()
             if conn.local_client:
                 conn.local_client.disconnect_push()

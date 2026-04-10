@@ -6,6 +6,7 @@ import base64
 import hashlib
 import logging
 import secrets
+import urllib.parse
 from typing import Any
 
 import voluptuous as vol
@@ -30,89 +31,60 @@ class SZGConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._auth = SZGCloudAuth()
         self._code_verifier: str = ""
-        self._code_challenge: str = ""
-        self._state: str = ""
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step — open browser for OAuth login."""
-        if user_input is not None:
-            # User clicked submit, open the browser
-            self._code_verifier = secrets.token_urlsafe(64)[:128]
-            self._code_challenge = base64.urlsafe_b64encode(
-                hashlib.sha256(self._code_verifier.encode()).digest()
-            ).rstrip(b"=").decode()
-            self._state = secrets.token_urlsafe(32)
-
-            auth_url = SZGCloudAuth.get_authorize_url(
-                self._code_challenge, self._state
-            )
-
-            return self.async_external_step(step_id="auth_callback", url=auth_url)
-
-        return self.async_show_form(step_id="user")
-
-    async def async_step_auth_callback(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the OAuth callback with the redirect URL."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="auth_callback",
-                data_schema=vol.Schema({
-                    vol.Required("redirect_url"): str,
-                }),
-            )
-
-        redirect_url = user_input.get("redirect_url", "")
+        """Single step: user pastes the redirect URL after logging in."""
         errors = {}
 
-        # Extract auth code from redirect URL
-        import urllib.parse
-        if "?" in redirect_url:
-            qs = redirect_url.split("?", 1)[1]
-            params = urllib.parse.parse_qs(qs)
-        else:
-            params = {}
+        if user_input is not None:
+            redirect_url = user_input.get("redirect_url", "").strip()
 
-        if "code" not in params:
-            errors["base"] = "invalid_url"
-            return self.async_show_form(
-                step_id="auth_callback",
-                data_schema=vol.Schema({
-                    vol.Required("redirect_url"): str,
-                }),
-                errors=errors,
-            )
+            # Extract auth code
+            code = None
+            if "?" in redirect_url:
+                qs = redirect_url.split("?", 1)[1]
+                params = urllib.parse.parse_qs(qs)
+                if "code" in params:
+                    code = params["code"][0]
 
-        code = params["code"][0]
+            if not code:
+                errors["base"] = "invalid_url"
+            else:
+                try:
+                    tokens = await self.hass.async_add_executor_job(
+                        self._auth.exchange_code, code, self._code_verifier
+                    )
+                    await self.async_set_unique_id(tokens.user_id)
+                    self._abort_if_unique_id_configured()
 
-        try:
-            tokens = await self.hass.async_add_executor_job(
-                self._auth.exchange_code, code, self._code_verifier
-            )
-        except Exception:
-            _LOGGER.exception("Authentication failed")
-            errors["base"] = "auth_failed"
-            return self.async_show_form(
-                step_id="auth_callback",
-                data_schema=vol.Schema({
-                    vol.Required("redirect_url"): str,
-                }),
-                errors=errors,
-            )
+                    return self.async_create_entry(
+                        title="Sub-Zero Group",
+                        data={
+                            CONF_TOKENS: tokens.to_dict(),
+                            CONF_DEVICE_PINS: {},
+                        },
+                    )
+                except Exception:
+                    _LOGGER.exception("Authentication failed")
+                    errors["base"] = "auth_failed"
 
-        # Check if this account is already configured
-        await self.async_set_unique_id(tokens.user_id)
-        self._abort_if_unique_id_configured()
+        # Generate fresh PKCE values each time the form is shown
+        self._code_verifier = secrets.token_urlsafe(64)[:128]
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(self._code_verifier.encode()).digest()
+        ).rstrip(b"=").decode()
+        state = secrets.token_urlsafe(32)
+        auth_url = SZGCloudAuth.get_authorize_url(code_challenge, state)
 
-        return self.async_create_entry(
-            title=tokens.name or tokens.email or "Sub-Zero Group",
-            data={
-                CONF_TOKENS: tokens.to_dict(),
-                CONF_DEVICE_PINS: {},
-            },
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({
+                vol.Required("redirect_url"): str,
+            }),
+            description_placeholders={"auth_url": auth_url},
+            errors=errors,
         )
 
     @staticmethod
@@ -133,26 +105,58 @@ class SZGOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show device PIN entry."""
-        return await self.async_step_device_pin(user_input)
+        """Step 1: Select a device and trigger PIN display."""
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
+        if not coordinator:
+            return self.async_abort(reason="not_loaded")
 
-    async def async_step_device_pin(
+        existing_pins = self._config_entry.data.get(CONF_DEVICE_PINS, {})
+        eligible = {}
+        for device_id, conn in coordinator.devices.items():
+            if conn.supports_local:
+                label = conn.name
+                if device_id in existing_pins:
+                    label += " (PIN already set)"
+                eligible[device_id] = label
+
+        if not eligible:
+            return self.async_abort(reason="no_local_devices")
+
+        if user_input is not None:
+            self._device_id = user_input.get("device_id", "")
+
+            # Trigger PIN display on the selected device
+            if self._device_id and self._device_id in coordinator.devices:
+                conn = coordinator.devices[self._device_id]
+                try:
+                    await conn.async_display_pin(self.hass)
+                except Exception:
+                    pass  # PIN display may fail if door is closed
+
+            return await self.async_step_enter_pin()
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required("device_id"): vol.In(eligible),
+            }),
+        )
+
+    async def async_step_enter_pin(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle PIN entry for a device."""
+        """Step 2: Enter the PIN shown on the appliance display."""
         errors = {}
 
         if user_input is not None:
             pin = user_input.get("pin", "").strip()
-            device_id = user_input.get("device_id", "")
 
             if len(pin) != 6 or not pin.isdigit():
                 errors["base"] = "invalid_pin"
             else:
-                # Store the PIN
                 new_data = dict(self._config_entry.data)
                 pins = dict(new_data.get(CONF_DEVICE_PINS, {}))
-                pins[device_id] = pin
+                pins[self._device_id] = pin
                 new_data[CONF_DEVICE_PINS] = pins
 
                 self.hass.config_entries.async_update_entry(
@@ -161,9 +165,8 @@ class SZGOptionsFlow(OptionsFlow):
                 return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
-            step_id="device_pin",
+            step_id="enter_pin",
             data_schema=vol.Schema({
-                vol.Required("device_id"): str,
                 vol.Required("pin"): str,
             }),
             errors=errors,

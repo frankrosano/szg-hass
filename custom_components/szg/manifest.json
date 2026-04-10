@@ -1,14 +1,12 @@
 {
   "domain": "szg",
   "name": "Sub-Zero Group",
-  "codeowners": [],
+  "codeowners": ["@frankrosano"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/yourusername/szg-hass",
-  "iot_class": "local_push",
-  "issue_tracker": "https://github.com/yourusername/szg-hass/issues",
-  "requirements": [
-    "pyszg==0.1.0"
-  ],
+  "documentation": "https://github.com/frankrosano/szg-hass",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/frankrosano/szg-hass/issues",
+  "requirements": ["pyszg@git+https://github.com/frankrosano/pyszg.git"],
   "version": "0.1.0"
 }

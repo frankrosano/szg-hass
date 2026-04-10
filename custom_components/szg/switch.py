@@ -31,19 +31,15 @@ async def async_setup_entry(
         if atype == ApplianceType.OVEN:
             entities.append(SZGSwitch(coordinator, conn, "cav_light_on", "Upper Light"))
             entities.append(SZGSwitch(coordinator, conn, "cav2_light_on", "Lower Light"))
-            entities.append(SZGSwitch(coordinator, conn, "cav_unit_on", "Upper Cavity"))
-            entities.append(SZGSwitch(coordinator, conn, "cav2_unit_on", "Lower Cavity"))
 
         elif atype == ApplianceType.REFRIGERATOR:
-            entities.append(SZGSwitch(coordinator, conn, "ice_maker_on", "Ice Maker"))
-            entities.append(SZGSwitch(coordinator, conn, "max_ice_on", "Max Ice"))
-            entities.append(SZGSwitch(coordinator, conn, "night_ice_on", "Night Ice"))
-            entities.append(SZGSwitch(coordinator, conn, "short_vacation_on", "Short Vacation"))
-            entities.append(SZGSwitch(coordinator, conn, "long_vacation_on", "Long Vacation"))
-            entities.append(SZGSwitch(coordinator, conn, "sabbath_on", "Sabbath Mode"))
+            pass  # Operating modes and ice maker handled by select entities
 
         elif atype == ApplianceType.DISHWASHER:
             entities.append(SZGSwitch(coordinator, conn, "heated_dry_on", "Heated Dry"))
+            entities.append(SZGSwitch(coordinator, conn, "extended_dry_on", "Extended Dry"))
+            entities.append(SZGSwitch(coordinator, conn, "high_temp_wash_on", "High Temp Wash"))
+            entities.append(SZGSwitch(coordinator, conn, "sani_rinse_on", "Sani Rinse"))
             entities.append(SZGSwitch(coordinator, conn, "top_rack_only_on", "Top Rack Only"))
 
     async_add_entities(entities)

@@ -5,10 +5,11 @@ from __future__ import annotations
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature, PERCENTAGE
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from pyszg import ApplianceType, CookMode, WashCycle, WashStatus
+from pyszg import ApplianceType, WashCycle, WashStatus
 
 from .const import DOMAIN
 from .coordinator import SZGCoordinator
@@ -28,27 +29,39 @@ async def async_setup_entry(
         atype = conn.appliance_type
 
         if atype == ApplianceType.OVEN:
-            entities.append(SZGTemperatureSensor(coordinator, conn, "cav_temp", "Upper Temperature"))
-            entities.append(SZGTemperatureSensor(coordinator, conn, "cav2_temp", "Lower Temperature"))
-            entities.append(SZGTemperatureSensor(coordinator, conn, "cav_set_temp", "Upper Set Temperature"))
-            entities.append(SZGTemperatureSensor(coordinator, conn, "cav2_set_temp", "Lower Set Temperature"))
-            entities.append(SZGCookModeSensor(coordinator, conn, "cav_cook_mode", "Upper Cook Mode"))
-            entities.append(SZGCookModeSensor(coordinator, conn, "cav2_cook_mode", "Lower Cook Mode"))
             entities.append(SZGTemperatureSensor(coordinator, conn, "cav_probe_temp", "Upper Probe Temperature"))
+            entities.append(SZGTemperatureSensor(coordinator, conn, "cav2_probe_temp", "Lower Probe Temperature"))
+            # Cook timers
+            entities.append(SZGSensor(coordinator, conn, "cav_cook_timer_end_time", "Upper Cook Timer End"))
+            entities.append(SZGSensor(coordinator, conn, "cav2_cook_timer_end_time", "Lower Cook Timer End"))
+            # Kitchen timers
+            entities.append(SZGSensor(coordinator, conn, "kitchen_timer_end_time", "Kitchen Timer 1 End"))
+            entities.append(SZGSensor(coordinator, conn, "kitchen_timer2_end_time", "Kitchen Timer 2 End"))
 
         elif atype == ApplianceType.REFRIGERATOR:
             entities.append(SZGTemperatureSensor(coordinator, conn, "ref_set_temp", "Fridge Set Temperature"))
             entities.append(SZGTemperatureSensor(coordinator, conn, "frz_set_temp", "Freezer Set Temperature"))
             entities.append(SZGPercentSensor(coordinator, conn, "air_filter_pct_remaining", "Air Filter Remaining"))
             entities.append(SZGPercentSensor(coordinator, conn, "water_filter_pct_remaining", "Water Filter Remaining"))
+            entities.append(SZGSensor(coordinator, conn, "water_filter_gal_remaining", "Water Filter Gallons Remaining"))
+            entities.append(SZGSensor(coordinator, conn, "max_ice_start_time", "Max Ice Start Time"))
+            entities.append(SZGSensor(coordinator, conn, "max_ice_end_time", "Max Ice End Time"))
+            entities.append(SZGSensor(coordinator, conn, "high_use_start_time", "High Use Start Time"))
+            entities.append(SZGSensor(coordinator, conn, "high_use_end_time", "High Use End Time"))
 
         elif atype == ApplianceType.DISHWASHER:
             entities.append(SZGWashCycleSensor(coordinator, conn, "wash_cycle", "Wash Cycle"))
             entities.append(SZGWashStatusSensor(coordinator, conn, "wash_status", "Wash Status"))
             entities.append(SZGSensor(coordinator, conn, "wash_cycle_end_time", "Cycle End Time"))
 
-        # Common
-        entities.append(SZGSensor(coordinator, conn, "uptime", "Uptime"))
+        # Common (disabled by default)
+        entities.append(SZGDiagnosticSensor(coordinator, conn, "uptime", "Uptime"))
+        entities.append(SZGDiagnosticSensor(coordinator, conn, "ipv4_addr", "IP Address"))
+        entities.append(SZGDiagnosticSensor(coordinator, conn, "device_wlan_id", "MAC Address"))
+
+        # Connection mode diagnostics (enabled by default)
+        entities.append(SZGConnectionModeSensor(coordinator, conn))
+        entities.append(SZGLiveReportingModeSensor(coordinator, conn))
 
     async_add_entities(entities)
 
@@ -84,18 +97,6 @@ class SZGPercentSensor(SZGSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
 
-class SZGCookModeSensor(SZGSensor):
-    """Cook mode sensor that shows the mode name."""
-
-    @property
-    def native_value(self) -> str:
-        val = self.appliance.raw.get(self._prop_key, 0)
-        try:
-            return CookMode(val).name.replace("_", " ").title()
-        except ValueError:
-            return f"Unknown ({val})"
-
-
 class SZGWashCycleSensor(SZGSensor):
     """Wash cycle sensor that shows the cycle name."""
 
@@ -118,3 +119,50 @@ class SZGWashStatusSensor(SZGSensor):
             return WashStatus(val).name.replace("_", " ").title()
         except ValueError:
             return f"Unknown ({val})"
+
+class SZGDiagnosticSensor(SZGSensor):
+    """Diagnostic sensor — disabled by default."""
+
+    _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+
+class SZGConnectionModeSensor(SZGEntity, SensorEntity):
+    """Diagnostic sensor showing the current control connection mode."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:connection"
+
+    def __init__(self, coordinator, connection):
+        super().__init__(coordinator, connection, "connection_mode")
+        self._attr_name = "Connection Mode"
+
+    @property
+    def native_value(self) -> str:
+        if self._connection.has_local:
+            return "Local"
+        return "Cloud"
+
+
+class SZGLiveReportingModeSensor(SZGEntity, SensorEntity):
+    """Diagnostic sensor showing the current live reporting connection mode."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:broadcast"
+
+    def __init__(self, coordinator, connection):
+        super().__init__(coordinator, connection, "live_reporting_mode")
+        self._attr_name = "Live Reporting Mode"
+
+    @property
+    def native_value(self) -> str:
+        # Local push is used when we have a local stream connection
+        if self._connection.has_local and self._connection.local_client:
+            stream = getattr(self._connection.local_client, "_stream", None)
+            if stream and stream.connected:
+                return "Local Push"
+        # Otherwise SignalR cloud push
+        coordinator = self.coordinator
+        if hasattr(coordinator, "_signalr") and coordinator._signalr:
+            return "Cloud Push (SignalR)"
+        return "Cloud Polling"
