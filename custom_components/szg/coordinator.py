@@ -218,7 +218,9 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         new_data[CONF_TOKENS] = self._tokens.to_dict()
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
 
-        self._cloud_client = SZGCloudClient(self._tokens, self._auth)
+        self._cloud_client = await self.hass.async_add_executor_job(
+            SZGCloudClient, self._tokens, self._auth
+        )
 
         # Discover devices
         try:
