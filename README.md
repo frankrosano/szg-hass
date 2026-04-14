@@ -7,29 +7,47 @@ Supports local IP control for older CAT-module appliances and cloud API for all 
 ## Features
 
 - Auto-discovers all appliances on your Sub-Zero account
-- Automatically selects local or cloud control per appliance
-- Real-time push updates via SignalR (cloud) and local TLS push (CAT modules)
-- Supports refrigerators, ovens, and dishwashers
+- Cloud control and real-time push updates via SignalR for all appliances
+- Optional local control for CAT-module appliances (faster, no cloud dependency)
+- Tested with refrigerators, ovens, and dishwashers
+- Other Sub-Zero Group appliance types (freezers, wine storage) should work but are untested
 
 ### Refrigerator
 - Climate entities for fridge and freezer temperature control
 - Door open/close binary sensors
-- Switches for ice maker, max ice, night ice, vacation modes, sabbath
-- Filter life sensors (air and water)
+- Ice maker mode selector (Off, Normal, Max Ice, Night Ice)
+- Operating mode selector (Normal, High Use, Short Vacation, Long Vacation, Sabbath)
+- Filter life sensors (air filter %, water filter %, water filter gallons remaining)
+- Max ice and high use start/end time sensors
+- Service required alert
+- Accent light level control (disabled by default, for glass-front models)
 
 ### Oven
-- Temperature sensors for each cavity (actual and set point)
-- Cook mode sensor (Bake, Roast, Convection, etc.)
-- Door and probe binary sensors
+- Climate entities for upper and lower cavities (current temp, set temp, on/off)
+- Cook mode selector for each cavity (Off, Bake, Roast, Broil, Convection, etc.)
 - Light switches for each cavity
-- Remote start/stop (requires physical "Remote Ready" on the oven)
+- Door and probe binary sensors for each cavity
+- Remote ready binary sensors
+- Remote start buttons (available only when Remote Ready is enabled on the oven)
+- Cook timer and kitchen timer end time sensors
+- Kitchen timer active binary sensors
+- Kitchen timer duration controls (set in minutes, 0 to cancel)
 
 ### Dishwasher
-- Wash cycle and status sensors
+- Wash cycle and wash status sensors
 - Cycle end time sensor (for countdown automations)
 - Door binary sensor
-- Rinse aid and softener low alerts
-- Heated dry and top rack only switches
+- Remote ready binary sensor
+- Start wash cycle button (available only when Remote Ready is enabled)
+- Delay start selector (Off, 1–12 hours)
+- Switches for heated dry, extended dry, high temp wash, sani rinse, top rack only
+- Rinse aid low and softener low alerts
+
+### All Appliances
+- Connection mode diagnostic sensor (Local or Cloud)
+- Live reporting mode diagnostic sensor (Local Push, Cloud Push, or Cloud Polling)
+- IP address, MAC address, and uptime diagnostic sensors (disabled by default)
+- Download diagnostics support for troubleshooting
 
 ## Installation (HACS)
 
@@ -43,11 +61,13 @@ Supports local IP control for older CAT-module appliances and cloud API for all 
 
 For CAT-module appliances (those supporting Control4/Crestron/Savant), local control provides faster response and no cloud dependency:
 
-1. After adding the integration, each CAT appliance will have a "Show PIN" button
-2. Open a door on the appliance
-3. Press the "Show PIN" button in Home Assistant
-4. Read the 6-digit PIN from the appliance's display
-5. Go to the integration's options and enter the PIN for that device
+1. After adding the integration, go to Settings → Integrations → Sub-Zero Group → Configure
+2. Select the appliance you want to enable local control for
+3. Open a door on the appliance, then click Submit
+4. The 6-digit PIN will appear on the appliance's display
+5. Enter the PIN and click Submit
+
+Local control is now active — commands and state updates will use the local network instead of the cloud. The integration automatically detects the appliance's IP address from the cloud API.
 
 ## Requirements
 
