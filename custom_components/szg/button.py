@@ -49,23 +49,6 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class SZGShowPinButton(SZGEntity, ButtonEntity):
-    """Button to request the appliance to display its PIN.
-
-    A door on the appliance must be physically open for this to work.
-    The 6-digit PIN will appear on the appliance's display for 20 seconds.
-    """
-
-    def __init__(self, coordinator, connection):
-        super().__init__(coordinator, connection, "show_pin")
-        self._attr_name = "Show PIN"
-        self._attr_icon = "mdi:lock-open-variant"
-
-    async def async_press(self) -> None:
-        """Request the appliance to display its PIN."""
-        await self._connection.async_display_pin(self.hass)
-
-
 class SZGRemoteStartButton(SZGEntity, ButtonEntity):
     """Button to start an appliance when Remote Ready is enabled.
 
