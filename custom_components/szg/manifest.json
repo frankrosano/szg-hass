@@ -4,6 +4,11 @@
   "codeowners": ["@frankrosano"],
   "config_flow": true,
   "dependencies": [],
+  "dhcp": [
+    {
+      "macaddress": "000680*"
+    }
+  ],
   "documentation": "https://github.com/frankrosano/szg-hass",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/frankrosano/szg-hass/issues",

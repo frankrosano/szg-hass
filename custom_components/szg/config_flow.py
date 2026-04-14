@@ -14,6 +14,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from pyszg import SZGCloudAuth
 
@@ -86,6 +87,24 @@ class SZGConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"auth_url": auth_url},
             errors=errors,
         )
+
+    async def async_step_dhcp(
+        self, discovery_info: DhcpServiceInfo
+    ) -> FlowResult:
+        """Handle DHCP discovery of a Sub-Zero Group appliance on the network.
+
+        DHCP finds individual appliances by MAC (OUI 00:06:80), but the
+        integration is configured per-account (one config entry covers all
+        appliances). If any config entry already exists, abort silently.
+        Otherwise, prompt the user to set up their account.
+        """
+        if self._async_current_entries():
+            return self.async_abort(reason="already_configured")
+
+        self.context["title_placeholders"] = {
+            "name": discovery_info.hostname or "Sub-Zero Appliance",
+        }
+        return await self.async_step_user()
 
     @staticmethod
     @callback
