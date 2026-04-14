@@ -39,7 +39,9 @@
       "no_local_devices": "No appliances support local control. Local control is only available for older CAT-module appliances."
     },
     "error": {
-      "invalid_pin": "Invalid PIN — must be exactly 6 digits"
+      "invalid_pin": "PIN must be exactly 6 digits (numbers only).",
+      "wrong_pin": "PIN rejected by the appliance. Make sure you entered the correct 6-digit code from the display.",
+      "cannot_connect": "Could not connect to the appliance. Make sure it is online and reachable on the network."
     }
   }
 }

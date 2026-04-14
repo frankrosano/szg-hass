@@ -173,15 +173,37 @@ class SZGOptionsFlow(OptionsFlow):
             if len(pin) != 6 or not pin.isdigit():
                 errors["base"] = "invalid_pin"
             else:
-                new_data = dict(self._config_entry.data)
-                pins = dict(new_data.get(CONF_DEVICE_PINS, {}))
-                pins[self._device_id] = pin
-                new_data[CONF_DEVICE_PINS] = pins
-
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry, data=new_data
+                # Validate the PIN against the appliance before saving
+                coordinator = self.hass.data.get(DOMAIN, {}).get(
+                    self._config_entry.entry_id
                 )
-                return self.async_create_entry(title="", data={})
+                if coordinator and self._device_id in coordinator.devices:
+                    conn = coordinator.devices[self._device_id]
+                    ip = conn.appliance.ip_address
+                    if not ip:
+                        errors["base"] = "cannot_connect"
+                    else:
+                        from pyszg import SZGClient
+                        from pyszg.exceptions import AuthenticationError as PinError
+
+                        try:
+                            client = SZGClient(ip, pin=pin)
+                            await self.hass.async_add_executor_job(client.refresh)
+                        except PinError:
+                            errors["base"] = "wrong_pin"
+                        except Exception:
+                            errors["base"] = "cannot_connect"
+
+                if not errors:
+                    new_data = dict(self._config_entry.data)
+                    pins = dict(new_data.get(CONF_DEVICE_PINS, {}))
+                    pins[self._device_id] = pin
+                    new_data[CONF_DEVICE_PINS] = pins
+
+                    self.hass.config_entries.async_update_entry(
+                        self._config_entry, data=new_data
+                    )
+                    return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
             step_id="enter_pin",
