@@ -26,7 +26,7 @@ from .const import DOMAIN, CONF_TOKENS, CONF_DEVICE_PINS
 
 _LOGGER = logging.getLogger(__name__)
 
-POLL_INTERVAL = timedelta(seconds=30)
+POLL_INTERVAL = timedelta(minutes=5)
 
 
 class SZGDeviceConnection:
@@ -139,7 +139,7 @@ class SZGDeviceConnection:
                 self.cloud_client.get_appliance_state, self.device_id
             )
         except Exception as exc:
-            _LOGGER.error("Cloud refresh failed for %s: %s", self.name, exc)
+            _LOGGER.debug("Cloud refresh failed for %s: %s", self.name, exc)
 
         return self.appliance
 
