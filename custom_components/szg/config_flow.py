@@ -14,6 +14,11 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from pyszg import SZGCloudAuth
@@ -208,7 +213,9 @@ class SZGOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="enter_pin",
             data_schema=vol.Schema({
-                vol.Required("pin"): str,
+                vol.Required("pin"): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.TEL)
+                ),
             }),
             errors=errors,
         )
