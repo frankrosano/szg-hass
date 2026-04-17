@@ -90,13 +90,26 @@ class SZGDeviceConnection:
                     _LOGGER.info("Local push connected for %s", self.name)
 
                     # Read updates in a loop (blocking reads in executor)
+                    consecutive_timeouts = 0
                     while True:
                         update = await hass.async_add_executor_job(
                             self.local_client.read_update, 60.0
                         )
                         if update and "props" in update:
+                            consecutive_timeouts = 0
                             self.appliance.update_from_response(update["props"])
                             on_update()
+                        elif update is None:
+                            consecutive_timeouts += 1
+                            # If no data for 5+ minutes, the connection is
+                            # likely dead (half-open socket after network blip)
+                            if consecutive_timeouts >= 5:
+                                raise Exception(
+                                    f"No data received in {consecutive_timeouts * 60}s, "
+                                    "assuming dead connection"
+                                )
+                        else:
+                            consecutive_timeouts = 0
                 except Exception as exc:
                     _LOGGER.warning(
                         "Local push lost for %s: %s. Reconnecting in 5s...",
