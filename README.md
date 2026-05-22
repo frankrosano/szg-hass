@@ -69,6 +69,12 @@ For CAT-module appliances (those supporting Control4/Crestron/Savant), local con
 
 Local control is now active — commands and state updates will use the local network instead of the cloud. The integration automatically detects the appliance's IP address from the cloud API.
 
+## Re-authentication
+
+If your Sub-Zero password changes or your account session is invalidated, Home Assistant will surface a reauthentication banner on the integration card. Click **Reconfigure** and follow the same login flow as initial setup. Entity history, customizations, and PIN settings are preserved — there is no need to remove and re-add the integration.
+
+You must log in with the same Sub-Zero account that the integration was originally set up with. If you log in with a different account the flow will abort and ask you to retry.
+
 ## Requirements
 
 - Sub-Zero Owner's App account with appliances registered

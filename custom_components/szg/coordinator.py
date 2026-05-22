@@ -279,7 +279,15 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         except Exception as err:
             raise ConfigEntryNotReady(f"Cannot fetch devices: {err}") from err
 
-        pins = self.entry.data.get(CONF_DEVICE_PINS, {})
+        # device_pins live in entry.options after the v1->v2 migration
+        # in async_migrate_entry. Both old (data) and new (options)
+        # locations are checked so a manually-edited entry with the
+        # old layout still works.
+        pins = (
+            self.entry.options.get(CONF_DEVICE_PINS)
+            or self.entry.data.get(CONF_DEVICE_PINS)
+            or {}
+        )
 
         for dev_info in device_list:
             device_id = dev_info["id"]
@@ -296,10 +304,14 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
     async def async_apply_pin_updates(self) -> None:
         """Apply PIN changes from the options flow without restart.
 
-        Checks for new PINs in the config entry data and sets up
-        local connections for devices that now have PINs.
+        Checks for new PINs in entry.options (post-migration) and entry.data
+        (legacy), and sets up local connections for devices that now have PINs.
         """
-        pins = self.entry.data.get(CONF_DEVICE_PINS, {})
+        pins = (
+            self.entry.options.get(CONF_DEVICE_PINS)
+            or self.entry.data.get(CONF_DEVICE_PINS)
+            or {}
+        )
 
         for device_id, conn in self.devices.items():
             if conn.supports_local and device_id in pins and not conn.has_local:

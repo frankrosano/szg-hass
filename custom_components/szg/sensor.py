@@ -50,8 +50,8 @@ async def async_setup_entry(
             entities.append(SZGSensor(coordinator, conn, "high_use_end_time", "High Use End Time"))
 
         elif atype == ApplianceType.DISHWASHER:
-            entities.append(SZGWashCycleSensor(coordinator, conn, "wash_cycle", "Wash Cycle"))
-            entities.append(SZGWashStatusSensor(coordinator, conn, "wash_status", "Wash Status"))
+            entities.append(SZGWashCycleSensor(coordinator, conn))
+            entities.append(SZGWashStatusSensor(coordinator, conn))
             entities.append(SZGSensor(coordinator, conn, "wash_cycle_end_time", "Cycle End Time"))
 
         # Common (disabled by default)
@@ -97,28 +97,52 @@ class SZGPercentSensor(SZGSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
 
 
-class SZGWashCycleSensor(SZGSensor):
-    """Wash cycle sensor that shows the cycle name."""
+class SZGWashCycleSensor(SZGEntity, SensorEntity):
+    """Wash cycle sensor that exposes the cycle as a translated enum.
+
+    Options match the ``WashCycle`` IntEnum names lowercased; an
+    ``unknown`` option covers cycle codes the library doesn't yet model.
+    Translations live under ``entity.sensor.wash_cycle.*``.
+    """
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [m.name.lower() for m in WashCycle] + ["unknown"]
+    _attr_translation_key = "wash_cycle"
+
+    def __init__(self, coordinator, connection):
+        super().__init__(coordinator, connection, "wash_cycle")
 
     @property
     def native_value(self) -> str:
-        val = self.appliance.raw.get(self._prop_key, 0)
+        val = self.appliance.raw.get("wash_cycle", 0)
         try:
-            return WashCycle(val).name.replace("_", " ").title()
+            return WashCycle(val).name.lower()
         except ValueError:
-            return f"Unknown ({val})"
+            return "unknown"
 
 
-class SZGWashStatusSensor(SZGSensor):
-    """Wash status sensor that shows the status name."""
+class SZGWashStatusSensor(SZGEntity, SensorEntity):
+    """Wash status sensor that exposes the status as a translated enum.
+
+    Options match the ``WashStatus`` IntEnum names lowercased; an
+    ``unknown`` option covers status codes the library doesn't yet model.
+    Translations live under ``entity.sensor.wash_status.*``.
+    """
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [m.name.lower() for m in WashStatus] + ["unknown"]
+    _attr_translation_key = "wash_status"
+
+    def __init__(self, coordinator, connection):
+        super().__init__(coordinator, connection, "wash_status")
 
     @property
     def native_value(self) -> str:
-        val = self.appliance.raw.get(self._prop_key, 0)
+        val = self.appliance.raw.get("wash_status", 0)
         try:
-            return WashStatus(val).name.replace("_", " ").title()
+            return WashStatus(val).name.lower()
         except ValueError:
-            return f"Unknown ({val})"
+            return "unknown"
 
 class SZGDiagnosticSensor(SZGSensor):
     """Diagnostic sensor — disabled by default."""
@@ -130,36 +154,36 @@ class SZGDiagnosticSensor(SZGSensor):
 class SZGConnectionModeSensor(SZGEntity, SensorEntity):
     """Diagnostic sensor showing the current control connection mode."""
 
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["local", "cloud"]
+    _attr_translation_key = "connection_mode"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:connection"
 
     def __init__(self, coordinator, connection):
         super().__init__(coordinator, connection, "connection_mode")
-        self._attr_name = "Connection Mode"
 
     @property
     def native_value(self) -> str:
-        if self._connection.has_local:
-            return "Local"
-        return "Cloud"
+        return "local" if self._connection.has_local else "cloud"
 
 
 class SZGLiveReportingModeSensor(SZGEntity, SensorEntity):
     """Diagnostic sensor showing the current live reporting connection mode."""
 
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["local_push", "cloud_push", "cloud_polling"]
+    _attr_translation_key = "live_reporting_mode"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:broadcast"
 
     def __init__(self, coordinator, connection):
         super().__init__(coordinator, connection, "live_reporting_mode")
-        self._attr_name = "Live Reporting Mode"
 
     @property
     def native_value(self) -> str:
-        # Local push is preferred when active.
         if self._connection.local_push_active:
-            return "Local Push"
-        # Otherwise SignalR cloud push if the WS is connected and routing.
+            return "local_push"
         if self.coordinator.cloud_push_active:
-            return "Cloud Push (SignalR)"
-        return "Cloud Polling"
+            return "cloud_push"
+        return "cloud_polling"

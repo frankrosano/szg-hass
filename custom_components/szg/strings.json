@@ -7,10 +7,19 @@
         "data": {
           "redirect_url": "Redirect URL"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Sub-Zero Group",
+        "description": "Your Sub-Zero session has expired. Log back in to keep the integration running.\n\n1. Open this link to log in: [Sub-Zero Login]({auth_url})\n2. After logging in, your browser will show an error page. Copy the full URL from the address bar.\n3. Paste it below.\n\nMake sure you log in with the same account you originally used.",
+        "data": {
+          "redirect_url": "Redirect URL"
+        }
       }
     },
     "abort": {
-      "already_configured": "This account is already configured"
+      "already_configured": "This account is already configured",
+      "reauth_account_mismatch": "The account you logged in with is different from the one this integration was set up with. Log in with the original account, or remove this integration and add the new one.",
+      "not_loaded": "The integration is not loaded. Please restart Home Assistant and try again."
     },
     "error": {
       "invalid_url": "No authorization code found in the URL. Make sure you copied the full redirect URL starting with msauth.com.subzero.group.owners.app://auth?code=...",
@@ -42,6 +51,57 @@
       "invalid_pin": "PIN must be exactly 6 digits (numbers only).",
       "wrong_pin": "PIN rejected by the appliance. Make sure you entered the correct 6-digit code from the display.",
       "cannot_connect": "Could not connect to the appliance. Make sure it is online and reachable on the network."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "connection_mode": {
+        "name": "Connection mode",
+        "state": {
+          "local": "Local",
+          "cloud": "Cloud"
+        }
+      },
+      "live_reporting_mode": {
+        "name": "Live reporting mode",
+        "state": {
+          "local_push": "Local Push",
+          "cloud_push": "Cloud Push (SignalR)",
+          "cloud_polling": "Cloud Polling"
+        }
+      },
+      "wash_cycle": {
+        "name": "Wash cycle",
+        "state": {
+          "none": "None",
+          "auto": "Auto",
+          "normal": "Normal",
+          "heavy": "Heavy",
+          "quick": "Quick",
+          "pots_and_pans": "Pots and Pans",
+          "soak_and_scrub": "Soak and Scrub",
+          "light": "Light",
+          "crystal_china": "Crystal China",
+          "rinse_and_hold": "Rinse and Hold",
+          "plastics": "Plastics",
+          "energy": "Energy",
+          "extra_quiet": "Extra Quiet",
+          "unknown": "Unknown"
+        }
+      },
+      "wash_status": {
+        "name": "Wash status",
+        "state": {
+          "idle": "Idle",
+          "ready": "Ready",
+          "running": "Running",
+          "paused": "Paused",
+          "canceled": "Canceled",
+          "drying": "Drying",
+          "complete": "Complete",
+          "unknown": "Unknown"
+        }
+      }
     }
   }
 }

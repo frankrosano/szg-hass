@@ -47,7 +47,6 @@ async def async_setup_entry(
         elif atype == ApplianceType.REFRIGERATOR:
             entities.append(SZGDoorSensor(coordinator, conn, "ref_door_ajar", "Fridge Door"))
             entities.append(SZGDoorSensor(coordinator, conn, "frz_door_ajar", "Freezer Door"))
-            entities.append(SZGBinarySensor(coordinator, conn, "service_required", "Service Required", BinarySensorDeviceClass.PROBLEM, diagnostic=True))
 
         elif atype == ApplianceType.DISHWASHER:
             entities.append(SZGDoorSensor(coordinator, conn, "door_ajar", "Door"))
@@ -55,6 +54,12 @@ async def async_setup_entry(
             entities.append(SZGBinarySensor(coordinator, conn, "remote_ready", "Remote Ready"))
             entities.append(SZGBinarySensor(coordinator, conn, "rinse_aid_low", "Rinse Aid Low", BinarySensorDeviceClass.PROBLEM))
             entities.append(SZGBinarySensor(coordinator, conn, "softener_low", "Softener Low", BinarySensorDeviceClass.PROBLEM))
+
+        # Service-required indicator is a global field on every appliance,
+        # so add it for every device regardless of type. Unique-id key is
+        # unchanged from the previous fridge-only implementation, so
+        # existing refrigerator entities are not duplicated by the registry.
+        entities.append(SZGBinarySensor(coordinator, conn, "service_required", "Service Required", BinarySensorDeviceClass.PROBLEM, diagnostic=True))
 
     async_add_entities(entities)
 
