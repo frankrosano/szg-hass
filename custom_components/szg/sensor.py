@@ -156,13 +156,10 @@ class SZGLiveReportingModeSensor(SZGEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        # Local push is used when we have a local stream connection
-        if self._connection.has_local and self._connection.local_client:
-            stream = getattr(self._connection.local_client, "_stream", None)
-            if stream and stream.connected:
-                return "Local Push"
-        # Otherwise SignalR cloud push
-        coordinator = self.coordinator
-        if hasattr(coordinator, "_signalr") and coordinator._signalr:
+        # Local push is preferred when active.
+        if self._connection.local_push_active:
+            return "Local Push"
+        # Otherwise SignalR cloud push if the WS is connected and routing.
+        if self.coordinator.cloud_push_active:
             return "Cloud Push (SignalR)"
         return "Cloud Polling"

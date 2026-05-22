@@ -21,7 +21,8 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
-from pyszg import SZGCloudAuth
+from pyszg import SZGClient, SZGCloudAuth
+from pyszg.exceptions import AuthenticationError as PySZGAuthError
 
 from .const import DOMAIN, CONF_TOKENS, CONF_DEVICE_PINS
 
@@ -188,13 +189,10 @@ class SZGOptionsFlow(OptionsFlow):
                     if not ip:
                         errors["base"] = "cannot_connect"
                     else:
-                        from pyszg import SZGClient
-                        from pyszg.exceptions import AuthenticationError as PinError
-
                         try:
                             client = SZGClient(ip, pin=pin)
                             await self.hass.async_add_executor_job(client.refresh)
-                        except PinError:
+                        except PySZGAuthError:
                             errors["base"] = "wrong_pin"
                         except Exception:
                             errors["base"] = "cannot_connect"

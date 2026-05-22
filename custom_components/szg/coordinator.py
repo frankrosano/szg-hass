@@ -9,7 +9,8 @@ from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from pyszg import (
     Appliance,
@@ -21,6 +22,7 @@ from pyszg import (
     SZGCloudSignalR,
     TokenSet,
 )
+from pyszg.exceptions import AuthenticationError as PySZGAuthError, SZGError
 
 from .const import DOMAIN, CONF_TOKENS, CONF_DEVICE_PINS
 
@@ -65,6 +67,20 @@ class SZGDeviceConnection:
     @property
     def has_local(self) -> bool:
         return self.local_client is not None
+
+    @property
+    def local_push_active(self) -> bool:
+        """True iff a local persistent push connection is currently delivering updates.
+
+        Encodes both halves of the condition: the background task must
+        still be running AND the underlying TLS stream must be alive.
+        """
+        return (
+            self._local_push_task is not None
+            and not self._local_push_task.done()
+            and self.local_client is not None
+            and self.local_client.is_push_connected
+        )
 
     def setup_local(self, ip: str, pin: str) -> None:
         """Set up local IP connection for a CAT device."""
@@ -125,13 +141,25 @@ class SZGDeviceConnection:
             self.local_client.disconnect_push()
 
     async def async_refresh(self, hass: HomeAssistant) -> Appliance:
-        """Refresh appliance state using the best available method."""
+        """Refresh appliance state using the best available method.
+
+        Raises ``pyszg.AuthenticationError`` on cloud auth failure so the
+        coordinator can surface ``ConfigEntryAuthFailed`` to HA. Other
+        ``SZGError`` subtypes (transport, timeout, command) are logged
+        and the local-then-cloud fallback continues.
+        """
         if self.has_local:
             try:
                 await hass.async_add_executor_job(self.local_client.refresh)
                 self.appliance = self.local_client.appliance
                 return self.appliance
-            except Exception as exc:
+            except PySZGAuthError:
+                # Local auth (PIN) failure isn't a cloud-token problem,
+                # but we still want to surface it rather than silently
+                # falling back. Tasks 15+ might react via repairs; for
+                # now let it propagate so the coordinator logs UpdateFailed.
+                raise
+            except SZGError as exc:
                 _LOGGER.warning(
                     "Local refresh failed for %s, falling back to cloud: %s",
                     self.name, exc,
@@ -142,7 +170,9 @@ class SZGDeviceConnection:
             self.appliance = await hass.async_add_executor_job(
                 self.cloud_client.get_appliance_state, self.device_id
             )
-        except Exception as exc:
+        except PySZGAuthError:
+            raise
+        except SZGError as exc:
             _LOGGER.debug("Cloud refresh failed for %s: %s", self.name, exc)
 
         return self.appliance
@@ -150,14 +180,20 @@ class SZGDeviceConnection:
     async def async_set_property(
         self, hass: HomeAssistant, name: str, value: Any
     ) -> None:
-        """Set a property using the best available method."""
+        """Set a property using the best available method.
+
+        Auth errors propagate so entity service handlers surface a
+        meaningful failure rather than silently no-oping.
+        """
         if self.has_local:
             try:
                 await hass.async_add_executor_job(
                     self.local_client.set_property, name, value
                 )
                 return
-            except Exception as exc:
+            except PySZGAuthError:
+                raise
+            except SZGError as exc:
                 _LOGGER.warning(
                     "Local set failed for %s, falling back to cloud: %s",
                     self.name, exc,
@@ -188,8 +224,10 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=DOMAIN,
             update_interval=POLL_INTERVAL,
+            always_update=False,
         )
         self.entry = entry
         self._auth = SZGCloudAuth()
@@ -199,10 +237,19 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         self._signalr_task: asyncio.Task | None = None
         self.devices: dict[str, SZGDeviceConnection] = {}
 
+    @property
+    def cloud_push_active(self) -> bool:
+        """True iff the SignalR WebSocket is currently connected and routing.
+
+        The SignalR access token has a 1-hour lifetime separate from the
+        OAuth id_token; once it expires Azure stops routing messages even
+        though the WebSocket itself stays open. ``SZGCloudSignalR.is_connected``
+        encodes both checks.
+        """
+        return self._signalr is not None and self._signalr.is_connected
+
     async def async_setup(self) -> None:
         """Initialize cloud auth and discover devices."""
-        from pyszg.exceptions import AuthenticationError as PySZGAuthError
-
         token_data = self.entry.data.get(CONF_TOKENS, {})
         self._tokens = TokenSet.from_dict(token_data)
 
@@ -211,10 +258,8 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
                 self._auth.ensure_valid, self._tokens
             )
         except PySZGAuthError as err:
-            from homeassistant.exceptions import ConfigEntryAuthFailed
             raise ConfigEntryAuthFailed("Token refresh failed") from err
         except Exception as err:
-            from homeassistant.exceptions import ConfigEntryNotReady
             raise ConfigEntryNotReady(f"Cannot connect to Sub-Zero cloud: {err}") from err
 
         # Save refreshed tokens
@@ -232,7 +277,6 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
                 self._cloud_client.get_devices
             )
         except Exception as err:
-            from homeassistant.exceptions import ConfigEntryNotReady
             raise ConfigEntryNotReady(f"Cannot fetch devices: {err}") from err
 
         pins = self.entry.data.get(CONF_DEVICE_PINS, {})
@@ -299,7 +343,7 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
                 if device_id in self.devices:
                     conn = self.devices[device_id]
                     # Skip SignalR updates for devices with active local push
-                    if conn.has_local and conn._local_push_task and not conn._local_push_task.done():
+                    if conn.local_push_active:
                         return
                     if msg_type == 1:
                         conn.appliance.update_from_response(data)
@@ -326,12 +370,24 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         )
 
     async def _async_update_data(self) -> dict[str, Appliance]:
-        """Poll all devices for current state (fallback when SignalR misses)."""
-        for conn in self.devices.values():
-            await conn.async_refresh(self.hass)
+        """Poll all devices for current state (fallback when SignalR misses).
 
-            # Lazy local connection setup: if we have a PIN but no local client yet,
-            # check if the cloud response gave us an IP address
+        Per-device refreshes run concurrently. Auth failures from any
+        device surface as ``ConfigEntryAuthFailed`` (triggers HA's reauth
+        flow); other transport failures surface as ``UpdateFailed``.
+        """
+        try:
+            await asyncio.gather(
+                *(conn.async_refresh(self.hass) for conn in self.devices.values())
+            )
+        except PySZGAuthError as err:
+            raise ConfigEntryAuthFailed("Cloud token rejected") from err
+        except SZGError as err:
+            raise UpdateFailed(str(err)) from err
+
+        # Lazy local connection setup: if we have a PIN but no local client yet,
+        # check if the cloud response gave us an IP address.
+        for conn in self.devices.values():
             if conn.pin and not conn.has_local and conn.supports_local:
                 ip = conn.appliance.ip_address
                 if ip:
