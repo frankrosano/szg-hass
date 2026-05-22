@@ -3,14 +3,14 @@
     "step": {
       "user": {
         "title": "Sub-Zero Group Login",
-        "description": "1. Open this link to log in: [Sub-Zero Login]({auth_url})\n2. After logging in, your browser will show an error page. Copy the full URL from the address bar.\n3. Paste it below.",
+        "description": "Sub-Zero's login flow redirects to a URL that browsers cannot open, so you'll need to grab it from your browser's developer console.\n\n1. **Before** clicking the login link below, open developer tools (F12 or Cmd+Option+I) and switch to the **Console** tab.\n2. Open this link to log in: [Sub-Zero Login]({auth_url})\n3. Log in with your Sub-Zero account. The redirect page will fail to load — that's expected.\n4. In the Console, find the navigation error containing a URL starting with `msauth.com.subzero.group.owners.app://auth?code=...`.\n5. Copy that full URL and paste it below.",
         "data": {
           "redirect_url": "Redirect URL"
         }
       },
       "reauth_confirm": {
         "title": "Re-authenticate Sub-Zero Group",
-        "description": "Your Sub-Zero session has expired. Log back in to keep the integration running.\n\n1. Open this link to log in: [Sub-Zero Login]({auth_url})\n2. After logging in, your browser will show an error page. Copy the full URL from the address bar.\n3. Paste it below.\n\nMake sure you log in with the same account you originally used.",
+        "description": "Your Sub-Zero session has expired. Log back in to keep the integration running. Make sure you log in with the same account this integration was originally set up with.\n\nSub-Zero's login flow redirects to a URL that browsers cannot open, so you'll need to grab it from your browser's developer console.\n\n1. **Before** clicking the login link below, open developer tools (F12 or Cmd+Option+I) and switch to the **Console** tab.\n2. Open this link to log in: [Sub-Zero Login]({auth_url})\n3. Log in with your Sub-Zero account. The redirect page will fail to load — that's expected.\n4. In the Console, find the navigation error containing a URL starting with `msauth.com.subzero.group.owners.app://auth?code=...`.\n5. Copy that full URL and paste it below.",
         "data": {
           "redirect_url": "Redirect URL"
         }
@@ -22,7 +22,7 @@
       "not_loaded": "The integration is not loaded. Please restart Home Assistant and try again."
     },
     "error": {
-      "invalid_url": "No authorization code found in the URL. Make sure you copied the full redirect URL starting with msauth.com.subzero.group.owners.app://auth?code=...",
+      "invalid_url": "No authorization code found in what you pasted. Make sure you copied the full URL from the developer console — it should start with msauth.com.subzero.group.owners.app://auth?code=...",
       "auth_failed": "Authentication failed. Please try again."
     }
   },
