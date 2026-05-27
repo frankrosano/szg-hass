@@ -21,6 +21,7 @@ from pyszg import (
     SZGCloudClient,
     SZGCloudSignalR,
     TokenSet,
+    TokenStore,
 )
 from pyszg.exceptions import AuthenticationError as PySZGAuthError, SZGError
 
@@ -231,7 +232,7 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         )
         self.entry = entry
         self._auth = SZGCloudAuth()
-        self._tokens: TokenSet | None = None
+        self._token_store: TokenStore | None = None
         self._cloud_client: SZGCloudClient | None = None
         self._signalr: SZGCloudSignalR | None = None
         self._signalr_task: asyncio.Task | None = None
@@ -251,25 +252,32 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
     async def async_setup(self) -> None:
         """Initialize cloud auth and discover devices."""
         token_data = self.entry.data.get(CONF_TOKENS, {})
-        self._tokens = TokenSet.from_dict(token_data)
+        initial_tokens = TokenSet.from_dict(token_data)
+
+        # Build the shared token store. The on_refresh callback fires
+        # every time pyszg rotates the refresh_token (which Azure AD
+        # B2C does on every refresh, invalidating the previous one),
+        # so we MUST persist the rotated tokens back to the config
+        # entry — otherwise the next HA restart loads an invalidated
+        # refresh_token and the integration falls into reauth.
+        self._token_store = TokenStore(
+            initial_tokens,
+            self._auth,
+            on_refresh=self._persist_rotated_tokens,
+        )
 
         try:
-            self._tokens = await self.hass.async_add_executor_job(
-                self._auth.ensure_valid, self._tokens
-            )
+            await self.hass.async_add_executor_job(self._token_store.get_valid)
         except PySZGAuthError as err:
             raise ConfigEntryAuthFailed("Token refresh failed") from err
         except Exception as err:
             raise ConfigEntryNotReady(f"Cannot connect to Sub-Zero cloud: {err}") from err
 
-        # Save refreshed tokens
-        new_data = dict(self.entry.data)
-        new_data[CONF_TOKENS] = self._tokens.to_dict()
-        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        # If the initial refresh rotated, _persist_rotated_tokens already
+        # wrote the new tokens. If it didn't (still valid), the entry is
+        # already correct.
 
-        self._cloud_client = await self.hass.async_add_executor_job(
-            SZGCloudClient, self._tokens, self._auth
-        )
+        self._cloud_client = SZGCloudClient(self._token_store)
 
         # Discover devices
         try:
@@ -300,6 +308,31 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
                 conn.pin = pins[device_id]
 
         # (SignalR started separately after setup to avoid blocking bootstrap)
+
+    def _persist_rotated_tokens(self, tokens: TokenSet) -> None:
+        """Write rotated tokens back to the config entry.
+
+        Invoked by ``TokenStore`` from whatever thread issued the
+        refresh — typically an executor thread doing a cloud REST call
+        or SignalR negotiate. We must hop onto the event loop to touch
+        ``hass.config_entries`` safely.
+
+        Azure AD B2C rotates the refresh_token on every refresh and
+        invalidates the previous one, so persisting promptly is what
+        keeps the integration logged in across HA restarts.
+        """
+        if self.hass.loop.is_closed():
+            # HA is shutting down; skip the write.
+            return
+
+        token_dict = tokens.to_dict()
+
+        def _do_update() -> None:
+            new_data = dict(self.entry.data)
+            new_data[CONF_TOKENS] = token_dict
+            self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+
+        self.hass.loop.call_soon_threadsafe(_do_update)
 
     async def async_apply_pin_updates(self) -> None:
         """Apply PIN changes from the options flow without restart.
@@ -346,7 +379,7 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         if self._signalr_task is not None:
             return  # Already running
 
-        self._signalr = SZGCloudSignalR(self._tokens, self._auth)
+        self._signalr = SZGCloudSignalR(self._token_store)
 
         device_ids = list(self.devices.keys())
 
