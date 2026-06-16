@@ -100,13 +100,14 @@ class SZGPercentSensor(SZGSensor):
 class SZGWashCycleSensor(SZGEntity, SensorEntity):
     """Wash cycle sensor that exposes the cycle as a translated enum.
 
-    Options match the ``WashCycle`` IntEnum names lowercased; an
-    ``unknown`` option covers cycle codes the library doesn't yet model.
-    Translations live under ``entity.sensor.wash_cycle.*``.
+    Options are the ``WashCycle`` IntEnum names lowercased; the enum's
+    ``UNKNOWN`` member (via its ``_missing_`` hook) covers cycle codes the
+    library doesn't yet model. Translations live under
+    ``entity.sensor.wash_cycle.*``.
     """
 
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = [m.name.lower() for m in WashCycle] + ["unknown"]
+    _attr_options = [m.name.lower() for m in WashCycle]
     _attr_translation_key = "wash_cycle"
 
     def __init__(self, coordinator, connection):
@@ -114,23 +115,20 @@ class SZGWashCycleSensor(SZGEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        val = self.appliance.raw.get("wash_cycle", 0)
-        try:
-            return WashCycle(val).name.lower()
-        except ValueError:
-            return "unknown"
+        return WashCycle(self.appliance.raw.get("wash_cycle", 0)).name.lower()
 
 
 class SZGWashStatusSensor(SZGEntity, SensorEntity):
     """Wash status sensor that exposes the status as a translated enum.
 
-    Options match the ``WashStatus`` IntEnum names lowercased; an
-    ``unknown`` option covers status codes the library doesn't yet model.
-    Translations live under ``entity.sensor.wash_status.*``.
+    Options are the ``WashStatus`` IntEnum names lowercased; the enum's
+    ``UNKNOWN`` member (via its ``_missing_`` hook) covers status codes the
+    library doesn't yet model. Translations live under
+    ``entity.sensor.wash_status.*``.
     """
 
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = [m.name.lower() for m in WashStatus] + ["unknown"]
+    _attr_options = [m.name.lower() for m in WashStatus]
     _attr_translation_key = "wash_status"
 
     def __init__(self, coordinator, connection):
@@ -138,11 +136,7 @@ class SZGWashStatusSensor(SZGEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        val = self.appliance.raw.get("wash_status", 0)
-        try:
-            return WashStatus(val).name.lower()
-        except ValueError:
-            return "unknown"
+        return WashStatus(self.appliance.raw.get("wash_status", 0)).name.lower()
 
 class SZGDiagnosticSensor(SZGSensor):
     """Diagnostic sensor — disabled by default."""
