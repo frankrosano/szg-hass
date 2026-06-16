@@ -13,5 +13,5 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/frankrosano/szg-hass/issues",
   "requirements": ["pyszg@git+https://github.com/frankrosano/pyszg.git@v0.3.4"],
-  "version": "0.1.4"
+  "version": "0.1.5"
 }

@@ -180,11 +180,12 @@ class SZGCookModeSelect(SZGEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        val = self.appliance.raw.get(self._prop_key, 0)
-        try:
-            return CookMode(val).name.replace("_", " ").title()
-        except ValueError:
-            return f"Unknown ({val})"
+        mode = CookMode(self.appliance.raw.get(self._prop_key, 0))
+        if mode is CookMode.UNKNOWN:
+            # Not a selectable option (UNKNOWN is excluded from COOK_MODES);
+            # report no selection rather than an out-of-list value.
+            return None
+        return mode.name.replace("_", " ").title()
 
     async def async_select_option(self, option: str) -> None:
         enum_name = option.upper().replace(" ", "_")
