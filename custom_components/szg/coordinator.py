@@ -176,7 +176,9 @@ class SZGDeviceConnection:
         # Cloud fallback (or primary for Saber/NGIX)
         try:
             self.appliance = await hass.async_add_executor_job(
-                self.cloud_client.get_appliance_state, self.device_id
+                self.cloud_client.get_appliance_state,
+                self.device_id,
+                self.module_generation,
             )
         except PySZGAuthError:
             raise
@@ -371,7 +373,9 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
                 if not ip:
                     try:
                         appliance = await self.hass.async_add_executor_job(
-                            self._cloud_client.get_appliance_state, device_id
+                            self._cloud_client.get_appliance_state,
+                            device_id,
+                            conn.module_generation,
                         )
                         ip = appliance.ip_address
                     except Exception as exc:
