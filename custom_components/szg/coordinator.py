@@ -144,22 +144,29 @@ class SZGDeviceConnection:
     async def async_refresh(self, hass: HomeAssistant) -> Appliance:
         """Refresh appliance state using the best available method.
 
-        Raises ``pyszg.AuthenticationError`` on cloud auth failure so the
-        coordinator can surface ``ConfigEntryAuthFailed`` to HA. Other
-        ``SZGError`` subtypes (transport, timeout, command) are logged
-        and the local-then-cloud fallback continues.
+        Raises ``pyszg.AuthenticationError`` only on *cloud* auth failure
+        so the coordinator can surface ``ConfigEntryAuthFailed`` to HA.
+        A *local* auth failure (PIN/lockout) is not a cloud-token problem,
+        so it falls back to cloud rather than propagating. Other
+        ``SZGError`` subtypes (transport, timeout, command) are logged and
+        the local-then-cloud fallback continues.
         """
         if self.has_local:
             try:
                 await hass.async_add_executor_job(self.local_client.refresh)
                 self.appliance = self.local_client.appliance
                 return self.appliance
-            except PySZGAuthError:
-                # Local auth (PIN) failure isn't a cloud-token problem,
-                # but we still want to surface it rather than silently
-                # falling back. Tasks 15+ might react via repairs; for
-                # now let it propagate so the coordinator logs UpdateFailed.
-                raise
+            except PySZGAuthError as exc:
+                # A local auth failure is a PIN/lockout problem on the CAT
+                # module, NOT a cloud-token problem. Falling through to the
+                # cloud path (rather than re-raising) is important: if this
+                # propagated, the coordinator would map it to
+                # ConfigEntryAuthFailed and trigger a spurious *cloud*
+                # reauth flow even though cloud auth is fine.
+                _LOGGER.warning(
+                    "Local auth failed for %s, falling back to cloud: %s",
+                    self.name, exc,
+                )
             except SZGError as exc:
                 _LOGGER.warning(
                     "Local refresh failed for %s, falling back to cloud: %s",
@@ -183,7 +190,9 @@ class SZGDeviceConnection:
     ) -> None:
         """Set a property using the best available method.
 
-        Auth errors propagate so entity service handlers surface a
+        A local auth failure (PIN/lockout) falls back to cloud rather than
+        propagating, since cloud is a separate credential. A cloud auth
+        error still propagates so entity service handlers surface a
         meaningful failure rather than silently no-oping.
         """
         if self.has_local:
@@ -192,8 +201,14 @@ class SZGDeviceConnection:
                     self.local_client.set_property, name, value
                 )
                 return
-            except PySZGAuthError:
-                raise
+            except PySZGAuthError as exc:
+                # Local PIN/lockout failure — fall back to cloud rather
+                # than surfacing it as an auth error (cloud auth is a
+                # separate credential and is likely still valid).
+                _LOGGER.warning(
+                    "Local set failed for %s (auth), falling back to cloud: %s",
+                    self.name, exc,
+                )
             except SZGError as exc:
                 _LOGGER.warning(
                     "Local set failed for %s, falling back to cloud: %s",
