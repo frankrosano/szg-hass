@@ -294,7 +294,13 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         # wrote the new tokens. If it didn't (still valid), the entry is
         # already correct.
 
-        self._cloud_client = SZGCloudClient(self._token_store)
+        # Build the cloud client in an executor: SZGCloudClient.__init__
+        # calls ssl.create_default_context(), which loads the system CA
+        # bundle from disk. That's blocking I/O and must not run on the
+        # event loop (HA flags it as a blocking call otherwise).
+        self._cloud_client = await self.hass.async_add_executor_job(
+            SZGCloudClient, self._token_store
+        )
 
         # Discover devices
         try:
@@ -327,29 +333,59 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         # (SignalR started separately after setup to avoid blocking bootstrap)
 
     def _persist_rotated_tokens(self, tokens: TokenSet) -> None:
-        """Write rotated tokens back to the config entry.
+        """Write rotated tokens back to the config entry, blocking until
+        the update has been applied on the event loop.
 
-        Invoked by ``TokenStore`` from whatever thread issued the
-        refresh — typically an executor thread doing a cloud REST call
-        or SignalR negotiate. We must hop onto the event loop to touch
-        ``hass.config_entries`` safely.
+        Invoked by ``TokenStore`` from whatever thread issued the refresh.
+        Every refresh in this integration runs in an executor thread — all
+        cloud REST calls go through ``async_add_executor_job`` and every
+        SignalR token call goes through ``run_in_executor`` — so we hop
+        onto the loop and *wait* for the write to complete before
+        returning.
 
-        Azure AD B2C rotates the refresh_token on every refresh and
-        invalidates the previous one, so persisting promptly is what
-        keeps the integration logged in across HA restarts.
+        Blocking (rather than the previous fire-and-forget
+        ``call_soon_threadsafe``) is deliberate. Azure AD B2C invalidates
+        the previous refresh_token on every refresh, so if the process dies
+        between the refresh returning and a deferred write running, the
+        entry is left holding a dead refresh_token and the next start falls
+        into a reauth flow. Waiting here guarantees the rotated token is
+        committed to the entry before the refreshing call returns.
         """
-        if self.hass.loop.is_closed():
-            # HA is shutting down; skip the write.
-            return
-
         token_dict = tokens.to_dict()
 
-        def _do_update() -> None:
+        def _apply() -> None:
+            # async_update_entry is a synchronous @callback, safe to invoke
+            # directly on the event loop thread.
             new_data = dict(self.entry.data)
             new_data[CONF_TOKENS] = token_dict
             self.hass.config_entries.async_update_entry(self.entry, data=new_data)
 
-        self.hass.loop.call_soon_threadsafe(_do_update)
+        # If we're somehow already on the event loop, run inline — blocking
+        # on a cross-thread future from the loop thread would deadlock it.
+        try:
+            already_on_loop = asyncio.get_running_loop() is self.hass.loop
+        except RuntimeError:
+            already_on_loop = False
+
+        if already_on_loop:
+            _apply()
+            return
+
+        async def _apply_on_loop() -> None:
+            _apply()
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(_apply_on_loop(), self.hass.loop)
+            future.result(timeout=10)
+        except RuntimeError:
+            # Loop is closed/closing (HA shutting down). The in-memory tokens
+            # stay valid for the rest of this process; there's nothing to
+            # persist to once the loop is gone.
+            _LOGGER.debug(
+                "Skipped token persistence: event loop unavailable (shutdown)"
+            )
+        except Exception:
+            _LOGGER.exception("Failed to persist rotated Sub-Zero cloud tokens")
 
     async def async_apply_pin_updates(self) -> None:
         """Apply PIN changes from the options flow without restart.
@@ -398,11 +434,17 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         if self._signalr_task is not None:
             return  # Already running
 
-        self._signalr = SZGCloudSignalR(self._token_store)
-
         device_ids = list(self.devices.keys())
 
         async def _run_signalr() -> None:
+            # Build the SignalR client off-loop: SZGCloudSignalR.__init__
+            # calls ssl.create_default_context(), which loads the system CA
+            # bundle from disk (blocking I/O that must not run on the loop).
+            signalr = await self.hass.async_add_executor_job(
+                SZGCloudSignalR, self._token_store
+            )
+            self._signalr = signalr
+
             async def on_signalr_update(device_id: str, msg_type: int, data: dict) -> None:
                 if device_id in self.devices:
                     conn = self.devices[device_id]
@@ -418,7 +460,7 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
                         {did: c.appliance for did, c in self.devices.items()}
                     )
 
-            await self._signalr.connect(
+            await signalr.connect(
                 device_ids=device_ids,
                 callback=on_signalr_update,
             )
