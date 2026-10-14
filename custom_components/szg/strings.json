@@ -3,12 +3,30 @@
     "step": {
       "user": {
         "title": "Sub-Zero Group Login",
+        "description": "Sign in with the email and password of your Sub-Zero Owner's App account. The password is used once to sign in and is never stored.\n\nIf your account uses multi-factor authentication, tick **Log in with browser instead**.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "use_browser": "Log in with browser instead"
+        }
+      },
+      "manual": {
+        "title": "Sub-Zero Group Browser Login",
         "description": "Sub-Zero's login flow redirects to a URL that browsers cannot open, so you'll need to grab it from your browser's developer console.\n\n1. **Before** clicking the login link below, open developer tools (F12 or Cmd+Option+I) and switch to the **Console** tab.\n2. Open this link to log in: [Sub-Zero Login]({auth_url})\n3. Log in with your Sub-Zero account. The redirect page will fail to load — that's expected.\n4. In the Console, find the navigation error containing a URL starting with `msauth.com.subzero.group.owners.app://auth?code=...`.\n5. Copy that full URL and paste it below.",
         "data": {
           "redirect_url": "Redirect URL"
         }
       },
       "reauth_confirm": {
+        "title": "Re-authenticate Sub-Zero Group",
+        "description": "Your Sub-Zero session has expired. Sign in again to keep the integration running. Make sure you use the same account this integration was originally set up with. The password is used once to sign in and is never stored.\n\nIf your account uses multi-factor authentication, tick **Log in with browser instead**.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "use_browser": "Log in with browser instead"
+        }
+      },
+      "reauth_manual": {
         "title": "Re-authenticate Sub-Zero Group",
         "description": "Your Sub-Zero session has expired. Log back in to keep the integration running. Make sure you log in with the same account this integration was originally set up with.\n\nSub-Zero's login flow redirects to a URL that browsers cannot open, so you'll need to grab it from your browser's developer console.\n\n1. **Before** clicking the login link below, open developer tools (F12 or Cmd+Option+I) and switch to the **Console** tab.\n2. Open this link to log in: [Sub-Zero Login]({auth_url})\n3. Log in with your Sub-Zero account. The redirect page will fail to load — that's expected.\n4. In the Console, find the navigation error containing a URL starting with `msauth.com.subzero.group.owners.app://auth?code=...`.\n5. Copy that full URL and paste it below.",
         "data": {
@@ -23,7 +41,12 @@
     },
     "error": {
       "invalid_url": "No authorization code found in what you pasted. Make sure you copied the full URL from the developer console — it should start with msauth.com.subzero.group.owners.app://auth?code=...",
-      "auth_failed": "Authentication failed. Please try again."
+      "auth_failed": "Authentication failed. Please try again.",
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Could not reach the Sub-Zero service. Please try again in a moment.",
+      "unknown": "An unexpected error occurred while signing in. Please try again, or use the browser method.",
+      "credentials_required": "Enter both your email and password, or tick \"Log in with browser instead\".",
+      "mfa_or_interactive_required": "Sub-Zero requires an extra sign-in step (for example MFA). Use the browser method below."
     }
   },
   "options": {

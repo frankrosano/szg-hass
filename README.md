@@ -55,7 +55,17 @@ Supports local IP control for older CAT-module appliances and cloud API for all 
 2. Install "Sub-Zero Group"
 3. Restart Home Assistant
 4. Go to Settings → Integrations → Add Integration → "Sub-Zero Group"
-5. Log in with your Sub-Zero Owner's App account
+5. Enter the email and password of your Sub-Zero Owner's App account. The password is used once to sign in and is never stored; only the resulting session tokens are kept.
+6. If the password sign-in cannot complete on its own (for example if Sub-Zero changes its sign-in page or adds multi-factor authentication, which it does not currently offer), Home Assistant switches to a browser-based fallback automatically. You can also tick **Log in with browser instead** to use it directly (see below).
+
+### Browser login (fallback)
+
+Sub-Zero's browser login redirects to a URL that browsers cannot open, so you copy it from the developer console:
+
+1. Before clicking the login link in the form, open developer tools (F12 or Cmd+Option+I) and switch to the **Console** tab.
+2. Open the login link and sign in. The redirect page will fail to load, which is expected.
+3. In the Console, find the navigation error containing a URL starting with `msauth.com.subzero.group.owners.app://auth?code=...`.
+4. Copy the full URL and paste it into the form.
 
 ## Local Control Setup
 
@@ -71,9 +81,15 @@ Local control is now active — commands and state updates will use the local ne
 
 ## Re-authentication
 
-If your Sub-Zero password changes or your account session is invalidated, Home Assistant will surface a reauthentication banner on the integration card. Click **Reconfigure** and follow the same login flow as initial setup. Entity history, customizations, and PIN settings are preserved — there is no need to remove and re-add the integration.
+If your Sub-Zero password changes or your account session is invalidated, Home Assistant will surface a reauthentication banner on the integration card. Click **Reconfigure** and sign in again with your email and password (the email is prefilled). If that does not work, use the browser login fallback described above. Entity history, customizations, and PIN settings are preserved — there is no need to remove and re-add the integration.
 
 You must log in with the same Sub-Zero account that the integration was originally set up with. If you log in with a different account the flow will abort and ask you to retry.
+
+## Troubleshooting
+
+- **"Sub-Zero requires an extra sign-in step"**: the password sign-in could not complete on its own (for example a consent page, a changed sign-in page, or MFA if Sub-Zero ever adds it). Use the browser login that the form then shows.
+- **"Could not reach the Sub-Zero service"**: Sub-Zero's login service sometimes returns transient errors. Wait a moment and try again.
+- **"Invalid email or password"**: check your credentials in the Owner's App. Avoid repeated failed attempts in case the account is temporarily locked.
 
 ## Requirements
 
