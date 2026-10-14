@@ -31,6 +31,28 @@ _LOGGER = logging.getLogger(__name__)
 
 POLL_INTERVAL = timedelta(minutes=5)
 
+# Azure AD B2C error codes carried on ``AuthenticationError.code`` by newer
+# pyszg. Compared as literals so an older pyszg (no constants) still works.
+_B2C_GRANT_EXPIRED = "AADB2C90080"
+_B2C_GRANT_REVOKED = "AADB2C90129"
+
+
+def _auth_failure_message(exc: BaseException, generic: str) -> str:
+    """Pick a user-facing reauth message from a pyszg AuthenticationError.
+
+    ``code`` is read with getattr so a pyszg without the attribute (or a
+    non-B2C failure where it is None) falls back to ``generic``.
+    """
+    code = getattr(exc, "code", None)
+    if code == _B2C_GRANT_EXPIRED:
+        return "Sub-Zero sign-in reached its maximum age; please sign in again"
+    if code == _B2C_GRANT_REVOKED:
+        return (
+            "Sub-Zero sign-in was revoked (for example after a password "
+            "change); please sign in again"
+        )
+    return generic
+
 
 class SZGDeviceConnection:
     """Manages the connection to a single appliance."""
@@ -253,6 +275,9 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         self._cloud_client: SZGCloudClient | None = None
         self._signalr: SZGCloudSignalR | None = None
         self._signalr_task: asyncio.Task | None = None
+        # Set once the SignalR task has asked HA to start reauth, so the
+        # request can never fire twice for this coordinator instance.
+        self._signalr_reauth_started = False
         self.devices: dict[str, SZGDeviceConnection] = {}
 
     @property
@@ -286,7 +311,9 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         try:
             await self.hass.async_add_executor_job(self._token_store.get_valid)
         except PySZGAuthError as err:
-            raise ConfigEntryAuthFailed("Token refresh failed") from err
+            message = _auth_failure_message(err, "Token refresh failed")
+            _LOGGER.warning("Sub-Zero sign-in rejected at startup: %s", message)
+            raise ConfigEntryAuthFailed(message) from err
         except Exception as err:
             raise ConfigEntryNotReady(f"Cannot connect to Sub-Zero cloud: {err}") from err
 
@@ -437,6 +464,27 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
         device_ids = list(self.devices.keys())
 
         async def _run_signalr() -> None:
+            try:
+                await _connect_signalr()
+            except PySZGAuthError as err:
+                # pyszg re-raises auth failures from connect() so we can
+                # trigger reauth. Transient errors (connection/timeout/
+                # websocket drops) never reach here: pyszg reconnects on
+                # its own. CancelledError is a BaseException, so it is
+                # not caught here and propagates on unload.
+                message = _auth_failure_message(err, "SignalR sign-in rejected")
+                _LOGGER.warning(
+                    "Sub-Zero SignalR authentication failed: %s; "
+                    "starting reauthentication",
+                    message,
+                )
+                if not self._signalr_reauth_started:
+                    self._signalr_reauth_started = True
+                    self.entry.async_start_reauth(self.hass)
+                # Task ends here: no retry until the user reauthenticates
+                # (which reloads the entry and builds a new coordinator).
+
+        async def _connect_signalr() -> None:
             # Build the SignalR client off-loop: SZGCloudSignalR.__init__
             # calls ssl.create_default_context(), which loads the system CA
             # bundle from disk (blocking I/O that must not run on the loop).
@@ -487,7 +535,9 @@ class SZGCoordinator(DataUpdateCoordinator[dict[str, Appliance]]):
                 *(conn.async_refresh(self.hass) for conn in self.devices.values())
             )
         except PySZGAuthError as err:
-            raise ConfigEntryAuthFailed("Cloud token rejected") from err
+            message = _auth_failure_message(err, "Cloud token rejected")
+            _LOGGER.warning("Sub-Zero sign-in rejected while polling: %s", message)
+            raise ConfigEntryAuthFailed(message) from err
         except SZGError as err:
             raise UpdateFailed(str(err)) from err
 
