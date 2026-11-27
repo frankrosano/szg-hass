@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from pyszg import ApplianceType, TEMP_RANGE_FRIDGE, TEMP_RANGE_FREEZER, TEMP_RANGE_OVEN
 
-from .const import DOMAIN
+from .const import DOMAIN, REFRIGERATION_TYPES
 from .coordinator import SZGCoordinator
 from .entity import SZGEntity
 
@@ -51,7 +51,7 @@ async def async_setup_entry(
                 )
             )
 
-        elif conn.appliance_type == ApplianceType.REFRIGERATOR:
+        elif conn.appliance_type in REFRIGERATION_TYPES:
             entities.append(
                 SZGClimate(
                     coordinator, conn,
