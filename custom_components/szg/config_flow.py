@@ -436,10 +436,9 @@ class SZGOptionsFlow(OptionsFlow):
                     new_options = dict(self._config_entry.options)
                     new_options[CONF_DEVICE_PINS] = pins
 
-                    self.hass.config_entries.async_update_entry(
-                        self._config_entry, options=new_options
-                    )
-                    return self.async_create_entry(title="", data={})
+                    # The options flow result *is* the new options dict;
+                    # returning data={} here would wipe the PIN just saved.
+                    return self.async_create_entry(title="", data=new_options)
 
         return self.async_show_form(
             step_id="enter_pin",
