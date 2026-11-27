@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from pyszg import ApplianceType
 
-from .const import DOMAIN
+from .const import DOMAIN, REFRIGERATION_TYPES
 from .coordinator import SZGCoordinator
 from .entity import SZGEntity
 
@@ -32,7 +32,7 @@ async def async_setup_entry(
             entities.append(SZGSwitch(coordinator, conn, "cav_light_on", "Upper Light"))
             entities.append(SZGSwitch(coordinator, conn, "cav2_light_on", "Lower Light"))
 
-        elif atype == ApplianceType.REFRIGERATOR:
+        elif atype in REFRIGERATION_TYPES:
             pass  # Operating modes and ice maker handled by select entities
 
         elif atype == ApplianceType.DISHWASHER:

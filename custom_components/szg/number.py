@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from pyszg import ApplianceType
 
-from .const import DOMAIN
+from .const import DOMAIN, REFRIGERATION_TYPES
 from .coordinator import SZGCoordinator
 from .entity import SZGEntity
 
@@ -33,7 +33,7 @@ async def async_setup_entry(
                 SZGKitchenTimer(coordinator, conn, "kitchen_timer2_duration", "Kitchen Timer 2")
             )
 
-        elif conn.appliance_type == ApplianceType.REFRIGERATOR:
+        elif conn.appliance_type in REFRIGERATION_TYPES:
             entities.append(
                 SZGAccentLight(coordinator, conn)
             )

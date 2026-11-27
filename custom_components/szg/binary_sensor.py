@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from pyszg import ApplianceType
 
-from .const import DOMAIN
+from .const import DOMAIN, REFRIGERATION_TYPES
 from .coordinator import SZGCoordinator
 from .entity import SZGEntity
 
@@ -44,7 +44,7 @@ async def async_setup_entry(
             entities.append(SZGBinarySensor(coordinator, conn, "kitchen_timer_active", "Kitchen Timer 1 Active"))
             entities.append(SZGBinarySensor(coordinator, conn, "kitchen_timer2_active", "Kitchen Timer 2 Active"))
 
-        elif atype == ApplianceType.REFRIGERATOR:
+        elif atype in REFRIGERATION_TYPES:
             entities.append(SZGDoorSensor(coordinator, conn, "ref_door_ajar", "Fridge Door"))
             entities.append(SZGDoorSensor(coordinator, conn, "frz_door_ajar", "Freezer Door"))
 

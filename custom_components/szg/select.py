@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from pyszg import ApplianceType, CookMode
 
-from .const import DOMAIN
+from .const import DOMAIN, REFRIGERATION_TYPES
 from .coordinator import SZGCoordinator
 from .entity import SZGEntity
 
@@ -37,7 +37,7 @@ async def async_setup_entry(
             entities.append(SZGCookModeSelect(coordinator, conn, "cav_cook_mode", "Upper Cook Mode"))
             entities.append(SZGCookModeSelect(coordinator, conn, "cav2_cook_mode", "Lower Cook Mode"))
 
-        elif conn.appliance_type == ApplianceType.REFRIGERATOR:
+        elif conn.appliance_type in REFRIGERATION_TYPES:
             entities.append(SZGIceMakerSelect(coordinator, conn))
             entities.append(SZGOperatingModeSelect(coordinator, conn))
 
